@@ -20,6 +20,9 @@ A single Python script for a fresh Ubuntu server that process form query to evol
    Decompress archaea/bacteria .faa.gz,
    parse each .faa to build a dictionary: contig_id -> top_level_id (by file name),
    build the mmseqs2 DB.
+   For some reasons the default build-in command of mmseq2 to build GTDB databases mmseqs databases GTDB outpath/GTDB tmp donot work well.
+   SO I need to manually download the GTDB files. There are 3 files of GTDB needed to be downloaded. The protein sequences file about 66G and 2 tsv files.
+
 
 3) Creates a DB from 'input.fasta', runs a local mmseqs2 search (example).
 
