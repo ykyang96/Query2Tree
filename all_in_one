@@ -37,6 +37,7 @@ A single Python script for a fresh Ubuntu server that process form query to evol
 5) Runs alignment with mafft (globalpair), trim with trimAl, and final IQ-TREE2:
    iqtree2 -s final.fasta -B 1000 -alrt 1000 -T <THREADS> 
    where the user can resume from a .ckp.gz if interrupted.
+   Note that globalpair can handle with large dataset but huge memory will be needed. Make sure there is enough memory for the process. Swapfile may be helpful but we recommend to use server with enough interner memory.
 
 No mmseqs2 lookup file is used. Instead, we parse each original .faa to 
 map sub-records to the top-level file ID.
