@@ -20,11 +20,15 @@ A single Python script for a fresh Ubuntu server that process form query to evol
    Decompress archaea/bacteria .faa.gz,
    parse each .faa to build a dictionary: contig_id -> top_level_id (by file name),
    build the mmseqs2 DB.
-   For some reasons the default build-in command of mmseq2 to build GTDB databases mmseqs databases GTDB outpath/GTDB tmp donot work well.
-   SO I need to manually download the GTDB files. There are 3 files of GTDB needed to be downloaded. The protein sequences file about 66G and 2 tsv files.
+   For unknown reason the default build-in command of mmseq2 for GTDB database build: mmseqs databases GTDB outpath/GTDB tmp donot work well.
+   SO I need to manually download the GTDB files. There are 3 files of GTDB needed to be downloaded. The gtdb_proteins_aa_reps.tar.gz is about 66G. 2 tsv files store the protein ID and corresponding species name. 
+   eg. RS_GCF_028743435.1	d__Archaea;p__Methanobacteriota;c__Methanobacteria;o__Methanobacteriales;f__Methanobacteriaceae;g__Methanobrevibacter_A;s__Methanobrevibacter_A smithii
+   Inside the gtdb_proteins_aa_reps.tar.gz, there are 2 folders:bacteria, archaea and one log file. Inside the folder there are many faa.gz files eg. GB_GCA_002505325.1.faa.gz 
+   However inside each faa file there are multiple sequences in fasta format with headings like DAUV01000075.1_1 I can only assume that all the sequences of one faa.gz file share the same GTDB proteinID (GB_GCA_002505325.1-like)
 
 
 3) Creates a DB from 'input.fasta', runs a local mmseqs2 search (example).
+   The input.fasta is the query fasta file ready for the mmseq2 local blastP.
 
 4) After 'mmseqs convertalis', the resulting FASTA has headings like:
    >DAUV01000075.1_1 ...
@@ -147,7 +151,7 @@ def main():
         run_cmd("mkdir -p gtdb_data && mv gtdb_proteins_aa_reps.tar.gz gtdb_data/")
         run_cmd("cd gtdb_data && tar -xzf gtdb_proteins_aa_reps.tar.gz && cd ..")
 
-        # Decompress .faa.gz in archaea, bacteria
+        # Decompress .faa.gz in archaea, bacteria.For large dataset, I use xargs to avoid error
         run_cmd(f"find gtdb_data/gtdb_proteins_aa_reps/archaea -name '*.faa.gz' -print0 | xargs -0 -n 1 -P {THREADS} pigz -d")
         run_cmd(f"find gtdb_data/gtdb_proteins_aa_reps/bacteria -name '*.faa.gz' -print0 | xargs -0 -n 1 -P {THREADS} pigz -d")
 
@@ -290,7 +294,7 @@ with open(mmseqs_in,"r") as fin, open(mmseqs_out,"w") as fout:
     # 9) Align with MAFFT => aligned.fasta
     run_cmd(f"mafft --globalpair --thread {THREADS} renamed_result.fasta > aligned.fasta")
 
-    # 10) Trim with trimAl => trimmed.fasta
+    # 10) Trim with trimAl => trimmed.fasta. Be careful to set the parameters.-gt 0.5 -cons 60 may be considered
     run_cmd("trimal -in aligned.fasta -out trimmed.fasta -automated1")
 
     # 11) (Optional) If we want to rename duplicates again, do so:
