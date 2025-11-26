@@ -1,31 +1,50 @@
 cat << 'EOF' > all_in_one.py
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-all_in_one.py
+===============================================================================
+                  GTDB-based Phylogenetic Placement Pipeline
+                all_in_one.py (2025-beginner-friendly version)
+===============================================================================
 
-A single Python script for a fresh Ubuntu server that process form query to evolution tree using GTDB databases.
+This is a single, self-contained Python script that turns a FRESH Ubuntu server
+into a complete system for placing your protein sequences into the GTDB Tree of Life.
 
-1) Installs:
+Ready for:
+• Biologists with limited Linux experience
+• Run on fresh Cloud servers (AWS, etc.)
+• One-click reproducible analysis
+
+What this script does — step by step:
+
+1) Installs the dependent tools:
    - tmux (for session management)
    - pigz (multi-threaded zip)
-   - mmseqs2 (latest avx2 build)
-   - MAFFT using .deb
-   - trimAl from source .zip
-   - IQ-TREE2 from .tar.gz
+   - mmseqs2 (avx2 build)
+   - MAFFT (using .deb)
+   - trimAl (from source .zip)
+   - IQ-TREE2 (from .tar.gz)
 
-2) Downloads GTDB data from official URLs:
-     gtdb_proteins_aa_reps.tar.gz
-     bac120_taxonomy.tsv
-     ar53_taxonomy.tsv
-   Decompress archaea/bacteria .faa.gz,
-   parse each .faa to build a dictionary: contig_id -> top_level_id (by file name),
-   build the mmseqs2 DB.
-   For unknown reason the default build-in command of mmseq2 for GTDB database build: mmseqs databases GTDB outpath/GTDB tmp donot work well.
-   SO I need to manually download the GTDB files. There are 3 files of GTDB needed to be downloaded. The gtdb_proteins_aa_reps.tar.gz is about 66G. 2 tsv files store the protein ID and corresponding species name. 
-   eg. RS_GCF_028743435.1	d__Archaea;p__Methanobacteriota;c__Methanobacteria;o__Methanobacteriales;f__Methanobacteriaceae;g__Methanobrevibacter_A;s__Methanobrevibacter_A smithii
-   Inside the gtdb_proteins_aa_reps.tar.gz, there are 2 folders:bacteria, archaea and one log file. Inside the folder there are many faa.gz files eg. GB_GCA_002505325.1.faa.gz 
-   However inside each faa file there are multiple sequences in fasta format with headings like DAUV01000075.1_1 I can only assume that all the sequences of one faa.gz file share the same GTDB proteinID (GB_GCA_002505325.1-like)
+2) Downloads GTDB data from official URLs:(~350 GB uncompressed)
+     • gtdb_proteins_aa_reps.tar.gz (~66 GB compressed)
+     • bac120_taxonomy.tsv.gz + ar53_taxonomy.tsv.gz
 
+     Inside the tar.gz:
+     ├── ar53/        → Archaeal representative genomes
+     ├── bac120/      → Bacterial representative genomes
+     └── (many .faa.gz files like GB_GCA_002505325.1.faa.gz)
+
+   Each .faa.gz contains many protein sequences from one genome.
+   All sequences in one file belong to the same GTDB genome accession.
+   The official URLs for downloading GTDB data may located in Australia. Choose the reasonable server location for faster downloading.
+
+3) Build the mmseqs2 DB.
+    For unknown reason the default build-in command of mmseq2 for GTDB database build: mmseqs databases GTDB outpath/GTDB tmp donot work well.
+    SO I need to manually download the GTDB files. There are 3 files of GTDB needed to be downloaded. The gtdb_proteins_aa_reps.tar.gz is about 66G. 2 tsv files store the protein ID and corresponding species name. 
+    eg. RS_GCF_028743435.1	d__Archaea;p__Methanobacteriota;c__Methanobacteria;o__Methanobacteriales;f__Methanobacteriaceae;g__Methanobrevibacter_A;s__Methanobrevibacter_A smithii
+    Inside the gtdb_proteins_aa_reps.tar.gz, there are 2 folders:bacteria, archaea and one log file. Inside the folder there are many faa.gz files eg. GB_GCA_002505325.1.faa.gz 
+    However inside each faa file there are multiple sequences in fasta format with headings like DAUV01000075.1_1 I can only assume that all the sequences of one faa.gz file share the same GTDB proteinID (GB_GCA_002505325.1-like)
 
 3) Creates a DB from 'input.fasta', runs a local mmseqs2 search (example).
    The input.fasta is the query fasta file ready for the mmseq2 local blastP.
@@ -55,7 +74,7 @@ Usage:
 Adjust parameters of mafft, trimAL, iqTREE as needed.
 """
 
-import os
+# ------------------- Executable Codes begin here -------
 import sys
 import subprocess
 
