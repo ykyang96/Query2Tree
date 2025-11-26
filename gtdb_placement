@@ -44,7 +44,7 @@ BIN_DIR = WORK_DIR / "bin"
 BIN_DIR.mkdir(exist_ok=True)
 os.environ["PATH"] = f"{BIN_DIR}:{os.environ['PATH']}"
 
-THREADS = min(os.cpu_count() or 32, 64)  # Safe max
+THREADS = os.cpu_count()
 print(f"Using {THREADS} CPU threads")
 
 # Toggle steps
