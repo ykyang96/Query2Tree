@@ -1,12 +1,8 @@
-mkdir -p ~/GTDB-OneClick && cd ~/GTDB-OneClick
-
-cat << 'EOF' > gtdb_oneclick.py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 GTDB-OneClick 2025 — The Only Working All-in-One Phylogenetic Placement Pipeline
 ================================================================================
-
 Features:
 • 100% automatic — no manual downloads
 • Resume-safe — just re-run if interrupted
@@ -14,15 +10,17 @@ Features:
 • Clear numbered steps with timestamps
 • Real genome names in final tree
 • Your tested & proven IQ-TREE 2.3.6
-
 Just run:
     tmux new -s gtdb
     python3 gtdb_oneclick.py
-
-Put your proteins in: input.fasta
+Put your proteins in: input.fasta (assumed to be a multi-FASTA of homologous protein sequences)
 Final tree: final.treefile
-"""
 
+IMPORTANT: This pipeline is designed for building a phylogenetic tree of a set of homologous protein sequences
+(by finding and including their closest homologs from GTDB representative genomes). It is NOT intended for
+whole-genome taxonomic placement (use GTDB-Tk for that). If your input.fasta contains non-homologous proteins,
+the alignment and tree will be invalid.
+"""
 import os, sys, shutil, subprocess, tarfile, io, gzip
 from pathlib import Path
 from collections import defaultdict
@@ -33,9 +31,8 @@ WORK_DIR = Path.cwd()
 BIN_DIR = WORK_DIR / "bin"
 BIN_DIR.mkdir(exist_ok=True)
 os.environ["PATH"] = f"{BIN_DIR}:{os.environ['PATH']}"
-
 # This gives you REAL threads (e.g. 512 on a 256-core EPYC)
-THREADS = os.cpu_count() 
+THREADS = os.cpu_count()
 CURRENT_STEP = 0
 TOTAL_STEPS = 10
 
@@ -44,28 +41,41 @@ def step(title):
     CURRENT_STEP += 1
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print("\n" + "═" * 100)
-    print(f"  STEP {CURRENT_STEP}/{TOTAL_STEPS} — {title}")
-    print(f"  Time: {now} | Using {THREADS} CPU threads | Dir: {WORK_DIR}")
+    print(f" STEP {CURRENT_STEP}/{TOTAL_STEPS} — {title}")
+    print(f" Time: {now} | Using {THREADS} CPU threads | Dir: {WORK_DIR}")
     print("═" * 100 + "\n")
 
-def run(cmd, check=True):
+def run(cmd, check=True, capture_output=False):
     print(f"→ {cmd}")
-    r = subprocess.run(cmd, shell=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    kwargs = {'shell': True, 'text': True}
+    if capture_output:
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs['stderr'] = subprocess.STDOUT
+    r = subprocess.run(cmd, **kwargs)
     if check and r.returncode != 0:
-        print("ERROR! Output:")
-        print(r.stdout)
+        if hasattr(r, 'stdout') and r.stdout:
+            print("ERROR! Output:")
+            print(r.stdout)
         print("\nRe-run the script — it will resume from the last completed step.")
         sys.exit(1)
-    if r.stdout.strip():
+    if hasattr(r, 'stdout') and r.stdout.strip():
         print(r.stdout.strip())
+    return r
 
 # ====================== TOOL INSTALLATION ======================
 def install_tools():
-    if all(shutil.which(t) for t in ["mmseqs", "mafft", "trimal", "iqtree2"]):
+    required_tools = ["mmseqs", "mafft", "trimal", "iqtree2", "aria2c"]  # Added aria2c
+    if all(shutil.which(t) for t in required_tools):
         step("All required tools already installed")
         return
-
     step("Installing bioinformatics tools (fully automatic)")
+
+    # aria2c — for fast parallel downloads
+    if not shutil.which("aria2c"):
+        run("wget -q https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-linux-gnu-64bit-build1.zip")
+        run("unzip -o aria2-1.37.0-linux-gnu-64bit-build1.zip aria2c")
+        run("mv aria2c bin/")
+        run("chmod +x bin/aria2c")
 
     # MMseqs2 — latest AVX2
     if not shutil.which("mmseqs"):
@@ -75,16 +85,16 @@ def install_tools():
 
     # MAFFT — latest official
     if not shutil.which("mafft"):
-        run("wget -q https://mafft.cbrc.jp/alignment/software/mafft-7.525-linux.tgz -O mafft.tgz || "
-            "wget -q https://mafft.cbrc.jp/alignment/software/mafft-latest-linux.tgz -O mafft.tgz")
+        run("wget -q https://mafft.cbrc.jp/alignment/software/mafft-latest-linux.tgz -O mafft.tgz || "
+            "wget -q https://mafft.cbrc.jp/alignment/software/mafft-7.525-linux.tgz -O mafft.tgz")
         run("tar xzf mafft.tgz")
         run("cp mafft-*/bin/* bin/")
 
     # trimAl — official pre-compiled binary
     if not shutil.which("trimal"):
         run("wget -q http://trimal.cgenomics.org/_media/downloads/trimal-1.4.1-linux64.zip -O trimal.zip || true")
-        run("unzip -oj trimal.zip trimal 2>/dev/null || unzip -oj trimal.zip */source/trimal 2>/dev/null || true")
-        run("cp trimal bin/ 2>/dev/null || cp */source/trimal bin/")
+        run("unzip -o trimal.zip trimal 2>/dev/null || unzip -o trimal.zip */source/trimal 2>/dev/null || true")
+        run("mv trimal bin/ 2>/dev/null || mv */source/trimal bin/")
         run("chmod +x bin/trimal")
 
     # IQ-TREE2 — YOUR tested version 2.3.6 (rock solid)
@@ -96,31 +106,40 @@ def install_tools():
 # ====================== MAIN PIPELINE ======================
 def main():
     print("\n╔" + "═" * 96 + "╗")
-    print("║             GTDB-OneClick 2025 — Starting Phylogenetic Placement             ║")
-    print("║                One script. Zero pain. Perfect tree.                         ║")
+    print("║ GTDB-OneClick 2025 — Starting Phylogenetic Placement ║")
+    print("║ One script. Zero pain. Perfect tree. ║")
     print("╚" + "═" * 96 + "╝\n")
-
     if not Path("input.fasta").exists():
         print("ERROR: input.fasta not found!")
         print("Please copy your protein sequences here and re-run.")
         sys.exit(1)
-
     install_tools()
 
-    # 1. Download GTDB
+    # 1. Download GTDB components if missing (taxonomy not used yet, but downloaded for future extensions)
+    downloaded_something = False
     if not Path("gtdb_proteins_aa_reps.tar.gz").exists():
         step("Downloading GTDB latest release (~70 GB compressed)")
         run("aria2c -x 32 -s 32 https://data.gtdb.ecogenomic.org/releases/latest/genomic_files_reps/gtdb_proteins_aa_reps.tar.gz")
+        downloaded_something = True
+    if not Path("bac120_taxonomy.tsv").exists():
         run("aria2c -x 16 https://data.gtdb.ecogenomic.org/releases/latest/bac120_taxonomy.tsv.gz")
+        run("gunzip bac120_taxonomy.tsv.gz")
+        downloaded_something = True
+    if not Path("ar53_taxonomy.tsv").exists():
         run("aria2c -x 16 https://data.gtdb.ecogenomic.org/releases/latest/ar53_taxonomy.tsv.gz")
-        run("pigz -d *.tsv.gz")
+        run("gunzip ar53_taxonomy.tsv.gz")
+        downloaded_something = True
+    if downloaded_something and CURRENT_STEP == 0:
+        step("GTDB downloads completed or already present")  # Placeholder step if no main download
 
     # 2. Build MMseqs2 DB
-    if not (WORK_DIR / "gtdb_db" / "version").exists():
+    db_marker = WORK_DIR / "gtdb_db" / "built.done"
+    if not db_marker.exists():
         step("Building correct MMseqs2 database from GTDB tar (this fixes the broken official method)")
         run("mkdir -p gtdb_db tmp")
         run(f"mmseqs tar2db gtdb_proteins_aa_reps.tar.gz gtdb_db --tar-include '*.faa.gz' --threads {THREADS}")
         run(f"mmseqs createindex gtdb_db tmp --threads {THREADS}")
+        db_marker.touch()  # Mark as done for resume
 
     # 3. Search
     if not Path("result.m8").exists():
@@ -143,80 +162,75 @@ def main():
                             if line.startswith(">"):
                                 contig = line[1:].split()[0]
                                 contig_to_genome[contig] = genome
-
         best_hits = {}
         with open("result.m8") as f:
             for line in f:
                 q, t = line.split()[:2]
                 if q not in best_hits:
-                    best_hits[q] = t.split()[0]
-
+                    best_hits[q] = t
         seen = defaultdict(int)
         with open("final_sequences.fasta", "w") as out:
             # Query sequences
-            for line in open("input.fasta"):
-                if line.startswith(">"):
-                    out.write(line.replace(">", ">QUERY_", 1))
-                else:
-                    out.write(line)
-
+            with open("input.fasta") as inp:
+                for line in inp:
+                    if line.startswith(">"):
+                        out.write(line.replace(">", ">QUERY_", 1))
+                    else:
+                        out.write(line)
             # Reference sequences
             with tarfile.open("gtdb_proteins_aa_reps.tar.gz", "r") as tar:
                 for q, contig in best_hits.items():
                     genome = contig_to_genome.get(contig, "UNKNOWN")
+                    if genome == "UNKNOWN":
+                        print(f"Warning: No genome found for contig {contig}")
+                        continue
                     seen[genome] += 1
                     new_id = genome if seen[genome] == 1 else f"{genome}_{seen[genome]}"
-                    member_name = next((m.name for m in tar.getmembers() if contig in m.name and m.name.endswith(".faa.gz")), None)
-                    if member_name:
-                        f = tar.extractfile(member_name)
+                    member_name = f"{genome}_protein.faa.gz"
+                    member = tar.getmember(member_name) if member_name in tar.getnames() else None
+                    if member:
+                        f = tar.extractfile(member)
                         if f:
                             found = False
                             seq = ""
                             for line in io.TextIOWrapper(gzip.open(f, "rt")):
-                                if line.startswith(">") and found:
-                                    break
-                                if found:
+                                if line.startswith(">"):
+                                    if found:
+                                        break
+                                    if line[1:].split()[0] == contig:
+                                        found = True
+                                        out.write(f">{new_id}__GTDB_ref\n")
+                                elif found:
                                     seq += line.strip()
-                                if contig in line:
-                                    found = True
-                                    out.write(f">{new_id}__GTDB_ref\n")
                             if found:
                                 out.write(seq + "\n")
+                            else:
+                                print(f"Warning: Contig {contig} not found in {member_name}")
 
-    # 5–10. Final steps
-    step("Running MAFFT globalpair alignment (this may take several hours)")
-    run(f"mafft --globalpair --thread {THREADS} final_sequences.fasta > aligned.fasta")
+    # 5. Running MAFFT globalpair alignment (this may take several hours)
+    if not Path("aligned.fasta").exists():
+        step("Running MAFFT globalpair alignment (this may take several hours)")
+        run(f"mafft --globalpair --thread {THREADS} final_sequences.fasta > aligned.fasta")
 
-    step("Trimming unreliable columns with trimAl")
-    run("trimal -automated1 -in aligned.fasta -out trimmed.fasta")
+    # 6. Trimming unreliable columns with trimAl
+    if not Path("trimmed.fasta").exists():
+        step("Trimming unreliable columns with trimAl")
+        run("trimal -automated1 -in aligned.fasta -out trimmed.fasta")
 
-    step("Building final phylogenetic tree with IQ-TREE2 + ModelFinder + 1000 bootstraps")
-    run(f"iqtree2 -s trimmed.fasta -B 1000 -alrt 1000 -T {THREADS} --prefix final -m MFP")
+    # 7. Building final phylogenetic tree with IQ-TREE2 + ModelFinder + 1000 bootstraps
+    if not Path("final.treefile").exists():
+        step("Building final phylogenetic tree with IQ-TREE2 + ModelFinder + 1000 bootstraps")
+        run(f"iqtree2 -s trimmed.fasta -B 1000 -alrt 1000 -T {THREADS} --prefix final -m MFP")
 
     step("ALL DONE! Your publication-ready tree is ready!")
     print("\n" + "╔" + "═" * 96 + "╗")
-    print("║                           SUCCESS!                                  ║")
-    print("║  final.treefile     → Your final tree (open in FigTree or iTOL)     ║")
-    print("║  final.iqtree       → Full report with support values               ║")
-    print("║  trimmed.fasta      → Final alignment                               ║")
+    print("║ SUCCESS! ║")
+    print("║ final.treefile → Your final tree (open in FigTree or iTOL) ║")
+    print("║ final.iqtree → Full report with support values ║")
+    print("║ trimmed.fasta → Final alignment ║")
     print("╚" + "═" * 96 + "╝\n")
     print("Thank you for using GTDB-OneClick — the pipeline that actually works.")
     print("Made with love for real scientists.")
 
 if __name__ == "__main__":
     main()
-EOF
-
-chmod +x gtdb_oneclick.py
-
-echo ""
-echo "GTDB-OneClick is ready!"
-echo "Usage:"
-echo "   cp your_proteins.fasta input.fasta"
-echo "   tmux new -s gtdb"
-echo "   python3 gtdb_oneclick.py"
-echo ""
-echo "You will see beautiful numbered steps like:"
-echo "   STEP 4/10 — Extracting best reference sequences..."
-echo ""
-echo "Done. Go publish amazing science!"
